@@ -1,0 +1,47 @@
+name: Build APK
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Unzip project
+        run: |
+          unzip -q -o "$(ls *.zip | head -1)" -d src
+          echo "SRC=$(dirname "$(find src -name pubspec.yaml | head -1)")" >> $GITHUB_ENV
+      - name: Create Android project
+        run: |
+          flutter create --org com.example --project-name music_player --platforms android app_build
+          cp "$SRC/pubspec.yaml" app_build/pubspec.yaml
+          rm -rf app_build/lib app_build/test
+          cp -r "$SRC/lib" app_build/lib
+          cp -r "$SRC/assets" app_build/assets
+          mkdir -p app_build/android/app/src/main/kotlin/com/example/music_player
+          cp "$SRC/native/MainActivity.kt" app_build/android/app/src/main/kotlin/com/example/music_player/MainActivity.kt
+          cp "$SRC/native/MusicWidgets.kt" app_build/android/app/src/main/kotlin/com/example/music_player/MusicWidgets.kt
+          cp -r "$SRC/native/res/." app_build/android/app/src/main/res/
+          M=app_build/android/app/src/main/AndroidManifest.xml
+          sed -i "/<application/e cat $SRC/native/permissions.xml" $M
+          sed -i "/<\/activity>/e cat $SRC/native/intent_filter.xml" $M
+          sed -i "/<\/application>/e cat $SRC/native/service.xml" $M
+          sed -i 's|android:label="[^"]*"|android:label="Music player"|' $M
+      - name: Build
+        working-directory: app_build
+        run: |
+          flutter pub get
+          dart run flutter_launcher_icons
+          flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Music-player-apk
+          path: app_build/build/app/outputs/flutter-apk/app-release.apk
